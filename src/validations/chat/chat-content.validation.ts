@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const TextContentSchema = z.object({
   type: z.literal('TEXT'),
-  text: z.string().min(1),
+  text: z.string(),
   metadata: z
     .object({
       formatting: z.string().optional(),
