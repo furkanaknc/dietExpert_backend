@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, User } from '@prisma/client';
+import { Prisma, User, UserProfile, UserHealth } from '@prisma/client';
 
 import { ConflictError } from '../../common/errors/conflict.error';
 import { NotFoundError } from '../../common/errors/not-found.error';
@@ -9,6 +9,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { UserDetailsResponse } from './interfaces/user-detail-response.interface';
 import { UserRegisterPayload } from '../../validations/auth/auth.validation';
 import { UserUpdatePayload } from '../../validations/users/users.validation';
+import { UserHealthPayload, UserInformationPayload } from '../../validations/users/user-profile.validation';
+import { UserWithHealth, UserWithProfile } from './types/model.type';
 
 @Injectable()
 export class UsersService {
@@ -81,6 +83,66 @@ export class UsersService {
       where: { id },
       data,
     });
+  }
+
+  async upsertInformation(id: string, payload: UserInformationPayload): Promise<UserWithProfile> {
+    await this.findByIdOrThrow(id);
+
+    await this.prismaService.userProfile.upsert({
+      where: { user_id: id },
+      create: { ...payload, user_id: id },
+      update: payload,
+    });
+
+    const userWithProfile = await this.prismaService.user.findUnique({
+      where: { id: id },
+      select: {
+        first_name: true,
+        last_name: true,
+        profile: { omit: { id: true, user_id: true, updated_at: true, created_at: true } },
+      },
+    });
+
+    if (!userWithProfile) throw new NotFoundError({ message: 'User not found' });
+
+    return userWithProfile;
+  }
+
+  async upsertHealth(id: string, payload: UserHealthPayload): Promise<UserWithHealth> {
+    await this.findByIdOrThrow(id);
+
+    await this.prismaService.userHealth.upsert({
+      where: { user_id: id },
+      create: { ...payload, user_id: id },
+      update: payload,
+    });
+
+    const userWithHealth = await this.prismaService.user.findUnique({
+      where: { id: id },
+      select: {
+        first_name: true,
+        last_name: true,
+        health: { omit: { id: true, user_id: true, updated_at: true, created_at: true } },
+      },
+    });
+
+    if (!userWithHealth) throw new NotFoundError({ message: 'User not found' });
+
+    return userWithHealth;
+  }
+
+  async getPersonalInformation(id: string) {
+    const user = await this.prismaService.user.findUnique({
+      where: { id },
+      include: {
+        profile: true,
+        health: true,
+      },
+    });
+
+    if (!user) throw new NotFoundError({ message: 'User not found' });
+
+    return user;
   }
 
   async getDetails(id: string): Promise<UserDetailsResponse> {
