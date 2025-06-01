@@ -1,4 +1,4 @@
-import { Module, ValidationPipe } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { EnvironmentModule } from './modules/common/environments/environment.module';
 import { PrismaModule } from './modules/common/prisma/prisma.module';
 import { AIModule } from './modules/ai/ai.module';
@@ -8,6 +8,7 @@ import { GlobalExceptionFilter } from './common/exception-filters/global-excepti
 import { JwtGuard } from './common/guards/jwt.guard';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ValidationPipe } from './common/pipes/validation.pipe';
 
 @Module({
   imports: [EnvironmentModule, PrismaModule, AIModule, ChatModule, UsersModule, AuthModule],
