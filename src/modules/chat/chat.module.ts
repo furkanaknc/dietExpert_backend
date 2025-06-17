@@ -1,14 +1,26 @@
 import { Module } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
-import { PrismaModule } from '../common/prisma/prisma.module';
-import { AIModule } from '../ai/ai.module';
-import { UsersModule } from '../users/users.module';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { GeminiService } from '../ai/gemini.service';
+import { UsersService } from '../users/users.service';
+import { GeminiRepository } from './repositories/gemini.repository';
+import { AIRepositoryFactory } from './repositories/ai-repository.factory';
+import { PersonalizationService } from './services/personalization.service';
+import { RequestClassifierService } from './services/request-classifier.service';
 
 @Module({
-  imports: [PrismaModule, AIModule, UsersModule],
   controllers: [ChatController],
-  providers: [ChatService],
+  providers: [
+    ChatService,
+    PrismaService,
+    GeminiService,
+    UsersService,
+    GeminiRepository,
+    AIRepositoryFactory,
+    PersonalizationService,
+    RequestClassifierService,
+  ],
   exports: [ChatService],
 })
 export class ChatModule {}
