@@ -5,6 +5,7 @@ import {
   SendAIMessagePayload,
   SendImageMessagePayload,
   SendAudioMessagePayload,
+  SendMixedMessagePayload,
 } from '../../validations/chat/chat-ai.validation';
 
 @Controller('chat')
@@ -40,6 +41,15 @@ export class ChatController {
   async sendAudioMessage(@Param('chatId') chatId: string, @Body() payload: SendAudioMessagePayload) {
     try {
       return this.chatService.sendAudioToAI(chatId, payload.content, payload.audioData, payload.mimeType);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  @Post(':chatId/ai/mixed')
+  async sendMixedMessage(@Param('chatId') chatId: string, @Body() payload: SendMixedMessagePayload) {
+    try {
+      return this.chatService.sendMixedMessageToAI(chatId, payload.content);
     } catch (error) {
       throw error;
     }
