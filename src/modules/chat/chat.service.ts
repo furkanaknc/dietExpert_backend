@@ -4,7 +4,6 @@ import { GeminiService } from '../ai/gemini.service';
 import { CreateChatType } from '../../validations/chat/chat.validation';
 import { MessageContent } from '../../validations/chat/chat-content.validation';
 import { ContentType, MessageRole } from '@prisma/client';
-import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class ChatService {
@@ -13,7 +12,6 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
-    private readonly usersService: UsersService, // Add users service for profile data
   ) {}
 
   async createChat(data: CreateChatType) {
@@ -43,22 +41,28 @@ export class ChatService {
           type: 'TEXT',
           text: `Hello! I'm DietExpert, your AI nutrition assistant. I'm here to help you with:
 
-🍎 **Nutritional Analysis** - Upload photos of your meals for calorie and nutrient breakdown
-🥗 **Diet Planning** - Get personalized meal plans and dietary advice  
-🔍 **Food Questions** - Ask about ingredients, recipes, and healthy alternatives
-📊 **Health Goals** - Assistance with weight management and nutrition targets
+  🍎 Nutritional Analysis - Upload photos of your meals for calorie and nutrient breakdown
 
-What would you like to know about nutrition today?`,
+  🥗 Diet Planning - Get personalized meal plans and dietary advice
+
+  🔍 Food Questions - Ask about ingredients, recipes, and healthy alternatives
+
+  📊 Health Goals - Assistance with weight management and nutrition targets
+
+  What would you like to know about nutrition today?`,
         },
       ],
       combined_text: `Hello! I'm DietExpert, your AI nutrition assistant. I'm here to help you with:
 
-🍎 **Nutritional Analysis** - Upload photos of your meals for calorie and nutrient breakdown
-🥗 **Diet Planning** - Get personalized meal plans and dietary advice  
-🔍 **Food Questions** - Ask about ingredients, recipes, and healthy alternatives
-📊 **Health Goals** - Assistance with weight management and nutrition targets
+  🍎 Nutritional Analysis - Upload photos of your meals for calorie and nutrient breakdown
 
-What would you like to know about nutrition today?`,
+  🥗 Diet Planning - Get personalized meal plans and dietary advice
+
+  🔍 Food Questions - Ask about ingredients, recipes, and healthy alternatives
+
+  📊 Health Goals - Assistance with weight management and nutrition targets
+
+  What would you like to know about nutrition today?`,
     };
 
     await this.addMessage(chat.id, MessageRole.ASSISTANT, welcomeMessage);
@@ -115,10 +119,9 @@ What would you like to know about nutrition today?`,
 
       const chat = await this.getChatById(chatId);
 
-      // Get personalized context for the user
-      const personalContext = await this.getUserPersonalizedContext(chat.user_id);
+      const userPersonalInfo = await this.getUserPersonalInfo(chat.user_id);
 
-      const aiResponse = await this.getAIResponseWithHistory(chat.messages, userMessage, personalContext);
+      const aiResponse = await this.getAIResponseWithHistory(chat.messages, userMessage, userPersonalInfo);
 
       if (!aiResponse) {
         throw new Error('Failed to get AI response');
@@ -143,20 +146,7 @@ What would you like to know about nutrition today?`,
 
       const userMsg = await this.addMessage(chatId, MessageRole.USER, userMessage);
 
-      const chat = await this.getChatById(chatId);
-
-      // Get personalized context for the user
-      const personalContext = await this.getUserPersonalizedContext(chat.user_id);
-
-      let prompt = this.extractTextFromContent(userMessage);
-      
-      // Enhance the image analysis prompt with personal context
-      if (personalContext) {
-        prompt = this.createPersonalizedSystemPrompt(personalContext) + 
-                '\n\nPlease analyze this food image and provide personalized advice based on my profile:\n' + prompt;
-      } else {
-        prompt = 'Please analyze this food image for nutritional content and provide dietary advice:\n' + prompt;
-      }
+      const prompt = this.extractTextFromContent(userMessage);
 
       const geminiResponse = await this.geminiService.generateContentWithImage(prompt, imageData, mimeType);
 
@@ -192,25 +182,14 @@ What would you like to know about nutrition today?`,
       this.logger.log(`Processing AI audio message for chat: ${chatId}`);
 
       const userMsg = await this.addMessage(chatId, MessageRole.USER, userMessage);
-      const chat = await this.getChatById(chatId);
-
-      // Get personalized context for the user
-      const personalContext = await this.getUserPersonalizedContext(chat.user_id);
-
       const prompt = this.extractTextFromContent(userMessage);
 
       try {
         this.logger.log('Attempting native Gemini audio processing...');
 
-        let audioPrompt = prompt
+        const audioPrompt = prompt
           ? `${prompt}`
           : 'Please respond naturally to what the user said in their audio message. You are DietExpert, their AI nutrition assistant.';
-
-        // Enhance the audio prompt with personal context
-        if (personalContext) {
-          audioPrompt = this.createPersonalizedSystemPrompt(personalContext) + 
-                      '\n\nPlease respond to the user\'s audio message with personalized advice:\n' + audioPrompt;
-        }
 
         const geminiAudioResponse = await this.geminiService.generateContentWithAudio(audioPrompt, audioData, mimeType);
 
@@ -242,7 +221,8 @@ What would you like to know about nutrition today?`,
       if (prompt && prompt.trim() && prompt !== 'I sent you an audio message') {
         this.logger.log(`Falling back to transcribed text processing: ${prompt.substring(0, 100)}...`);
 
-        const aiResponse = await this.getAIResponseWithHistory(chat.messages, userMessage, personalContext);
+        const chat = await this.getChatById(chatId);
+        const aiResponse = await this.getAIResponseWithHistory(chat.messages, userMessage);
 
         if (!aiResponse) {
           throw new Error('Failed to get AI response');
@@ -285,42 +265,6 @@ What would you like to know about nutrition today?`,
       }
     } catch (error) {
       this.logger.error(`Error processing AI audio message: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  async sendMixedMessageToAI(chatId: string, userMessage: MessageContent) {
-    try {
-      this.logger.log(`Processing AI mixed message for chat: ${chatId}`);
-
-      const userMsg = await this.addMessage(chatId, MessageRole.USER, userMessage);
-      const chat = await this.getChatById(chatId);
-
-      // Get personalized context for the user
-      const personalContext = await this.getUserPersonalizedContext(chat.user_id);
-
-      // Check what types of content we have
-      const hasText = userMessage.items.some(item => item.type === 'TEXT');
-      const hasImage = userMessage.items.some(item => item.type === 'IMAGE');
-      const hasAudio = userMessage.items.some(item => item.type === 'AUDIO');
-
-      // For mixed content, use the standard AI response with history approach
-      // since it can handle complex content types via extractTextFromContent
-      const aiResponse = await this.getAIResponseWithHistory(chat.messages, userMessage, personalContext);
-
-      if (!aiResponse) {
-        throw new Error('Failed to get AI response for mixed message');
-      }
-
-      const aiMsg = await this.addMessage(chatId, MessageRole.ASSISTANT, aiResponse.content);
-
-      return {
-        userMessage: userMsg,
-        aiMessage: aiMsg,
-        usage: aiResponse.usage,
-      };
-    } catch (error) {
-      this.logger.error(`Error processing AI mixed message: ${error.message}`, error.stack);
       throw error;
     }
   }
@@ -390,15 +334,15 @@ What would you like to know about nutrition today?`,
     });
   }
 
-  private async getAIResponse(userMessage: MessageContent, personalContext?: string) {
+  private async getAIResponse(userMessage: MessageContent, systemContext?: string) {
     try {
       let prompt = this.extractTextFromContent(userMessage);
-      
-      // Add personalized context if available
-      if (personalContext) {
-        prompt = this.createPersonalizedSystemPrompt(personalContext) + '\n\nUser: ' + prompt;
+
+      // Prepend system context if available
+      if (systemContext) {
+        prompt = `${systemContext}\n\nUser: ${prompt}`;
       }
-      
+
       const response = await this.geminiService.generateText(prompt);
 
       if (!response.success || !response.data) {
@@ -423,8 +367,14 @@ What would you like to know about nutrition today?`,
     }
   }
 
-  private async getAIResponseWithHistory(messages: any[], userMessage: MessageContent, personalContext?: string) {
+  private async getAIResponseWithHistory(messages: any[], userMessage: MessageContent, userPersonalInfo?: any) {
     try {
+      // Build system context with user's personal information
+      let systemContext = '';
+      if (userPersonalInfo) {
+        systemContext = this.buildUserContextPrompt(userPersonalInfo);
+      }
+
       const geminiHistory = messages
         .slice(0, -1)
         .filter((msg) => msg.role === 'USER' || msg.role === 'ASSISTANT')
@@ -433,25 +383,37 @@ What would you like to know about nutrition today?`,
           parts: this.extractTextFromContent(msg.content),
         }));
 
-      if (geminiHistory.length === 0 || geminiHistory[0].role === 'model') {
-        this.logger.log('Using simple text generation (no valid history)');
-        return this.getAIResponse(userMessage, personalContext);
+      // Add system context as first message if available and no history exists
+      if (systemContext && (geminiHistory.length === 0 || geminiHistory[0].role === 'model')) {
+        geminiHistory.unshift({
+          role: 'user' as const,
+          parts: systemContext,
+        });
+        geminiHistory.push({
+          role: 'model' as const,
+          parts: 'I understand. I will use your personal information to provide personalized nutrition advice.',
+        });
       }
 
-      // Add personalized system context to the first message if available
-      if (personalContext && geminiHistory.length > 0) {
-        const systemPrompt = this.createPersonalizedSystemPrompt(personalContext);
-        geminiHistory[0].parts = systemPrompt + '\n\nUser: ' + geminiHistory[0].parts;
+      if (geminiHistory.length === 0 || geminiHistory[0].role === 'model') {
+        this.logger.log('Using simple text generation (no valid history)');
+        return this.getAIResponse(userMessage, systemContext);
       }
 
       const sessionResult = await this.geminiService.startChatSession(geminiHistory);
 
       if (!sessionResult.success || !sessionResult.data) {
         this.logger.warn('Failed to start chat session, falling back to simple generation');
-        return this.getAIResponse(userMessage, personalContext);
+        return this.getAIResponse(userMessage, systemContext);
       }
 
-      const userMessageText = this.extractTextFromContent(userMessage);
+      let userMessageText = this.extractTextFromContent(userMessage);
+
+      // If we have user info but didn't add to history, prepend to current message
+      if (systemContext && geminiHistory.length <= 2) {
+        userMessageText = `${systemContext}\n\nUser: ${userMessageText}`;
+      }
+
       const geminiResponse = await this.geminiService.sendChatMessage(sessionResult.data, userMessageText);
 
       if (!geminiResponse.success || !geminiResponse.data) {
@@ -473,7 +435,9 @@ What would you like to know about nutrition today?`,
     } catch (error) {
       this.logger.error(`Error getting AI response with history: ${error.message}`);
       this.logger.log('Falling back to simple text generation');
-      return this.getAIResponse(userMessage, personalContext);
+
+      const systemContext = userPersonalInfo ? this.buildUserContextPrompt(userPersonalInfo) : '';
+      return this.getAIResponse(userMessage, systemContext);
     }
   }
 
@@ -509,142 +473,64 @@ What would you like to know about nutrition today?`,
     return ContentType.MIXED;
   }
 
-  // New method to get personalized context for AI prompts
-  private async getUserPersonalizedContext(userId: string): Promise<string> {
+  private async getUserPersonalInfo(userId: string) {
     try {
-      // Get user's personal information including profile and health data
-      const personalInfo = await this.usersService.getPersonalInformation(userId);
-      
-      if (!personalInfo) {
-        this.logger.log(`No personal information found for user ${userId}`);
-        return '';
-      }
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          profile: true,
+          health: true,
+        },
+      });
 
-      const contextParts: string[] = [];
-
-      // Add user's name for personalization
-      if (personalInfo.first_name) {
-        contextParts.push(`User's name: ${personalInfo.first_name}`);
-      }
-
-      // Add physical information
-      if (personalInfo.profile) {
-        const { age, sex, weight, height } = personalInfo.profile;
-        
-        if (age) contextParts.push(`Age: ${age} years old`);
-        if (sex) contextParts.push(`Sex: ${sex.toLowerCase()}`);
-        if (weight) contextParts.push(`Weight: ${weight} kg`);
-        if (height) contextParts.push(`Height: ${height} cm`);
-
-        // Calculate BMI if we have weight and height
-        if (weight && height) {
-          const heightInM = height / 100;
-          const bmi = (weight / (heightInM * heightInM)).toFixed(1);
-          let bmiCategory = '';
-          const bmiValue = parseFloat(bmi);
-          
-          if (bmiValue < 18.5) {
-            bmiCategory = ' (underweight)';
-          } else if (bmiValue < 25) {
-            bmiCategory = ' (normal weight)';
-          } else if (bmiValue < 30) {
-            bmiCategory = ' (overweight)';
-          } else {
-            bmiCategory = ' (obese)';
-          }
-          
-          contextParts.push(`BMI: ${bmi}${bmiCategory}`);
-        }
-      }
-
-      // Add health and lifestyle information
-      if (personalInfo.health) {
-        const { activity_level, goal, dietary_restrictions, medical_conditions, allergies } = personalInfo.health;
-
-        if (activity_level) {
-          const activityMap = {
-            'SEDENTARY': 'sedentary lifestyle (little to no exercise)',
-            'LIGHTLY_ACTIVE': 'lightly active (light exercise 1-3 days/week)',
-            'MODERATELY_ACTIVE': 'moderately active (moderate exercise 3-5 days/week)',
-            'VERY_ACTIVE': 'very active (hard exercise 6-7 days/week)',
-            'EXTRA_ACTIVE': 'extremely active (very hard exercise, physical job)'
-          };
-          contextParts.push(`Activity level: ${activityMap[activity_level] || activity_level.toLowerCase()}`);
-        }
-
-        if (goal) {
-          const goalMap = {
-            'WEIGHT_LOSS': 'weight loss',
-            'WEIGHT_GAIN': 'weight gain',
-            'MAINTENANCE': 'weight maintenance',
-            'MUSCLE_GAIN': 'muscle gain',
-            'HEALTH_IMPROVEMENT': 'general health improvement',
-            'SPORTS_PERFORMANCE': 'sports performance enhancement',
-            'GENERAL_WELLNESS': 'general wellness'
-          };
-          contextParts.push(`Health goal: ${goalMap[goal] || goal.toLowerCase()}`);
-        }
-
-        if (dietary_restrictions?.length > 0) {
-          contextParts.push(`Dietary restrictions: ${dietary_restrictions.join(', ')}`);
-        }
-
-        if (medical_conditions?.length > 0) {
-          contextParts.push(`Medical conditions: ${medical_conditions.join(', ')}`);
-        }
-
-        if (allergies?.length > 0) {
-          contextParts.push(`Allergies: ${allergies.join(', ')}`);
-        }
-      }
-
-      if (contextParts.length === 0) {
-        this.logger.log(`No personal context available for user ${userId}`);
-        return '';
-      }
-
-      this.logger.log(`Generated personal context for user ${userId} with ${contextParts.length} data points`);
-      return `\n\n[PERSONAL CONTEXT FOR PERSONALIZED ADVICE]\n${contextParts.join('\n')}\n[END PERSONAL CONTEXT]\n\n`;
+      return user;
     } catch (error) {
-      this.logger.warn(`Failed to get user personalized context for user ${userId}: ${error.message}`);
-      return '';
+      this.logger.error(`Error fetching user personal info: ${error.message}`);
+      return null;
     }
   }
 
-  // Enhanced method to create personalized system prompt
-  private createPersonalizedSystemPrompt(personalContext: string): string {
-    const basePrompt = `You are DietExpert, an AI nutrition assistant specializing in personalized dietary advice, meal planning, and nutrition analysis.`;
-    
-    if (!personalContext.trim()) {
-      return basePrompt + `
+  private buildUserContextPrompt(userInfo: any): string {
+    if (!userInfo) return '';
 
-CAPABILITIES:
-🍎 Nutritional Analysis - Analyze food photos for calories and nutrients
-🥗 Meal Planning - Create personalized meal plans
-🔍 Food Questions - Answer questions about ingredients and recipes
-📊 Health Goals - Provide advice for fitness and wellness goals
+    const parts = ["You are DietExpert, an AI nutrition assistant. Here is the user's personal information:"];
 
-Please provide helpful, evidence-based nutrition advice.`;
+    // Basic info
+    parts.push(`Name: ${userInfo.first_name} ${userInfo.last_name}`);
+
+    // Profile information
+    if (userInfo.profile) {
+      const profile = userInfo.profile;
+      if (profile.age) parts.push(`Age: ${profile.age} years old`);
+      if (profile.sex) parts.push(`Gender: ${profile.sex.toLowerCase()}`);
+      if (profile.weight) parts.push(`Weight: ${profile.weight} kg`);
+      if (profile.height) parts.push(`Height: ${profile.height} cm`);
     }
 
-    return basePrompt + `
+    // Health information
+    if (userInfo.health) {
+      const health = userInfo.health;
+      if (health.activity_level) {
+        parts.push(`Activity Level: ${health.activity_level.replace('_', ' ').toLowerCase()}`);
+      }
+      if (health.goal) {
+        parts.push(`Health Goal: ${health.goal.replace('_', ' ').toLowerCase()}`);
+      }
+      if (health.dietary_restrictions && health.dietary_restrictions.length > 0) {
+        parts.push(`Dietary Restrictions: ${health.dietary_restrictions.join(', ')}`);
+      }
+      if (health.medical_conditions && health.medical_conditions.length > 0) {
+        parts.push(`Medical Conditions: ${health.medical_conditions.join(', ')}`);
+      }
+      if (health.allergies && health.allergies.length > 0) {
+        parts.push(`Allergies: ${health.allergies.join(', ')}`);
+      }
+    }
 
-${personalContext}
+    parts.push(
+      '\nPlease use this information to provide personalized nutrition advice and diet recommendations. If any critical information is missing for diet planning, politely ask the user to provide it.',
+    );
 
-CAPABILITIES:
-🍎 Nutritional Analysis - Analyze food photos for calories and nutrients
-🥗 Meal Planning - Create personalized meal plans based on the user's profile
-🔍 Food Questions - Answer questions about ingredients and recipes
-📊 Health Goals - Provide advice tailored to the user's specific goals and lifestyle
-
-PERSONALIZATION GUIDELINES:
-- Use the user's personal context to provide tailored advice
-- Consider their BMI, activity level, and health goals in recommendations
-- Respect dietary restrictions and allergies in all suggestions
-- Account for medical conditions when providing advice
-- Adjust portion sizes and calorie recommendations based on their profile
-- Use their name when appropriate to make responses more personal
-
-Please provide helpful, evidence-based nutrition advice that's specifically tailored to this user's profile.`;
+    return parts.join('\n');
   }
 }

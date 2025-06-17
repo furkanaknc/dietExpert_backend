@@ -22,11 +22,6 @@ const SendAudioMessageSchema = z.object({
   }),
 });
 
-const SendMixedMessageSchema = z.object({
-  content: MessageContentSchema,
-});
-
 export class SendAIMessagePayload extends createZodDto(SendAIMessageSchema) {}
 export class SendImageMessagePayload extends createZodDto(SendImageMessageSchema) {}
 export class SendAudioMessagePayload extends createZodDto(SendAudioMessageSchema) {}
-export class SendMixedMessagePayload extends createZodDto(SendMixedMessageSchema) {}
