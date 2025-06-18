@@ -30,7 +30,7 @@ export class AuthService {
   }
 
   async register(payload: UserRegisterPayload): Promise<OmittedUser> {
-    await this.usersService.checkExistUserOrThrow(payload.email, payload.first_name, payload.last_name);
+    await this.usersService.checkExistUserOrThrow(payload.email);
 
     return await this.usersService.create(payload);
   }

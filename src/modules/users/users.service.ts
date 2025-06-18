@@ -16,20 +16,13 @@ import { UserWithHealth, UserWithProfile } from './types/model.type';
 export class UsersService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async checkExistUserOrThrow(
-    email: string,
-    first_name: string,
-    last_name: string,
-    options?: Omit<Prisma.UserFindUniqueArgs, 'where'>,
-  ): Promise<void> {
-    const existingUser = await this.prismaService.user.findFirst({
+  async checkExistUserOrThrow(email: string, options?: Omit<Prisma.UserFindUniqueArgs, 'where'>): Promise<void> {
+    const existingUser = await this.prismaService.user.findUnique({
       ...options,
-      where: {
-        OR: [{ email }, { first_name }, { last_name }],
-      },
+      where: { email },
     });
 
-    if (existingUser) throw new ConflictError({ message: 'User already exists' });
+    if (existingUser) throw new ConflictError({ message: 'Email already exists' });
   }
 
   async findByIdOrThrow(id: string, options?: Omit<Prisma.UserFindUniqueArgs, 'where'>): Promise<User> {
@@ -70,7 +63,12 @@ export class UsersService {
     let data = payload;
 
     if (payload.email) {
-      const existingUser = await this.prismaService.user.findFirst({ where: { email: payload.email } });
+      const existingUser = await this.prismaService.user.findFirst({
+        where: {
+          email: payload.email,
+          NOT: { id },
+        },
+      });
       if (existingUser) throw new ConflictError({ message: 'Email already exists' });
     }
 
