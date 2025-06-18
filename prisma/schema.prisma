@@ -8,25 +8,27 @@ datasource db {
 }
 
 model User {
-  id         String       @id @default(uuid())
-  first_name String
-  last_name  String
-  email      String       @unique
-  password   String
-  created_at DateTime     @default(now())
-  updated_at DateTime     @updatedAt
-  chats      Chat[]
-  status     UserStatus   @default(ACTIVE)
-  profile    UserProfile?
-  health     UserHealth?
+  id                      String                @id @default(uuid())
+  first_name              String
+  last_name               String
+  email                   String                @unique
+  password                String
+  created_at              DateTime              @default(now())
+  updated_at              DateTime              @updatedAt
+  chats                   Chat[]
+  status                  UserStatus            @default(ACTIVE)
+  profile                 UserProfile?
+  health                  UserHealth?
+  food_entries            FoodEntry[]
+  daily_calorie_summaries DailyCalorieSummary[]
 }
 
 model UserProfile {
   id         String   @id @default(uuid())
   user_id    String   @unique
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  weight     Float? // in kg
-  height     Float? // in cm
+  weight     Float?
+  height     Float?
   age        Int?
   sex        Sex?
   created_at DateTime @default(now())
@@ -50,6 +52,44 @@ model UserHealth {
   @@index([user_id])
 }
 
+model FoodEntry {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  message_id String?
+  message    Message? @relation(fields: [message_id], references: [id], onDelete: SetNull)
+  food_name  String
+  calories   Float
+  consumed_at DateTime @default(now())
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([user_id])
+  @@index([consumed_at])
+  @@index([user_id, consumed_at])
+}
+
+model DailyCalorieSummary {
+  id             String   @id @default(uuid())
+  user_id        String
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+  total_calories Float    @default(0)
+  total_protein  Float?   @default(0)
+  total_carbs    Float?   @default(0)
+  total_fat      Float?   @default(0)
+  total_fiber    Float?   @default(0)
+  total_sugar    Float?   @default(0)
+  total_sodium   Float?   @default(0)
+  goal_calories  Float?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([user_id, date])
+  @@index([user_id])
+  @@index([date])
+}
+
 model Chat {
   id         String    @id @default(uuid())
   title      String
@@ -69,6 +109,7 @@ model Message {
   role         MessageRole
   content_type ContentType @default(TEXT)
   content      Json
+  food_entries FoodEntry[]
   created_at   DateTime    @default(now())
   updated_at   DateTime    @updatedAt
 
