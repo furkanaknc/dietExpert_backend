@@ -4,6 +4,7 @@ import { GeminiService } from '../ai/gemini.service';
 import { CreateChatType } from '../../validations/chat/chat.validation';
 import { MessageContent } from '../../validations/chat/chat-content.validation';
 import { ContentType, MessageRole } from '@prisma/client';
+import { NutritionService } from '../nutrition/nutrition.service';
 
 @Injectable()
 export class ChatService {
@@ -12,6 +13,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
+    private readonly nutritionService: NutritionService,
   ) {}
 
   async createChat(data: CreateChatType) {
@@ -129,6 +131,9 @@ export class ChatService {
 
       const aiMsg = await this.addMessage(chatId, MessageRole.ASSISTANT, aiResponse.content);
 
+      // Parse food data from conversation (user message + AI response) in the background
+      this.parseAndStoreFoodDataFromConversation(userMsg.id, chat.user_id, userMessage, aiResponse.content);
+
       return {
         userMessage: userMsg,
         aiMessage: aiMsg,
@@ -144,6 +149,7 @@ export class ChatService {
     try {
       this.logger.log(`Processing AI image message for chat: ${chatId}`);
 
+      const chat = await this.getChatById(chatId);
       const userMsg = await this.addMessage(chatId, MessageRole.USER, userMessage);
 
       const prompt = this.extractTextFromContent(userMessage);
@@ -165,6 +171,9 @@ export class ChatService {
       };
 
       const aiMsg = await this.addMessage(chatId, MessageRole.ASSISTANT, aiMessageContent);
+
+      // Parse food data from conversation for image messages
+      this.parseAndStoreFoodDataFromConversation(userMsg.id, chat.user_id, userMessage, aiMessageContent);
 
       return {
         userMessage: userMsg,
@@ -532,5 +541,54 @@ export class ChatService {
     );
 
     return parts.join('\n');
+  }
+
+  private async parseAndStoreFoodData(messageId: string, userId: string, content: MessageContent) {
+    try {
+      const textContent = this.extractTextFromContent(content);
+      this.logger.log(`Attempting to parse food data from text: ${textContent.substring(0, 200)}...`);
+      const result = await this.nutritionService.parseAndStoreFoodFromMessage(messageId, userId, textContent);
+      this.logger.log(`Food parsing result: ${result.length} items found`);
+    } catch (error) {
+      this.logger.error(`Error parsing food data from message: ${error.message}`, error.stack);
+      // Don't throw - this is a background operation
+    }
+  }
+
+  private async parseAndStoreFoodDataFromConversation(
+    messageId: string,
+    userId: string,
+    userMessage: MessageContent,
+    aiResponse: MessageContent,
+  ) {
+    try {
+      const userTextContent = this.extractTextFromContent(userMessage);
+      const aiTextContent = this.extractTextFromContent(aiResponse);
+
+      this.logger.log(`🔍 ATTEMPTING TO PARSE FOOD DATA FROM CONVERSATION`);
+      this.logger.log(`📝 Message ID: ${messageId}`);
+      this.logger.log(`👤 User ID: ${userId}`);
+      this.logger.log(`👥 User: "${userTextContent.substring(0, 150)}${userTextContent.length > 150 ? '...' : ''}"`);
+      this.logger.log(`🤖 AI: "${aiTextContent.substring(0, 150)}${aiTextContent.length > 150 ? '...' : ''}"`);
+
+      const result = await this.nutritionService.parseAndStoreFoodFromConversation(
+        messageId,
+        userId,
+        userTextContent,
+        aiTextContent,
+      );
+
+      if (result.length > 0) {
+        const totalCalories = result.reduce((sum, entry) => sum + (entry.calories || 0), 0);
+        this.logger.log(
+          `🎉 FOOD PARSING SUCCESS: ${result.length} entries created with ${totalCalories} total calories`,
+        );
+      } else {
+        this.logger.log(`⚠️  FOOD PARSING RESULT: No food entries created`);
+      }
+    } catch (error) {
+      this.logger.error(`💥 ERROR in parseAndStoreFoodDataFromConversation: ${error.message}`, error.stack);
+      // Don't throw - this is a background operation
+    }
   }
 }

@@ -8,8 +8,10 @@ import { GeminiRepository } from './repositories/gemini.repository';
 import { AIRepositoryFactory } from './repositories/ai-repository.factory';
 import { PersonalizationService } from './services/personalization.service';
 import { RequestClassifierService } from './services/request-classifier.service';
+import { NutritionModule } from '../nutrition/nutrition.module';
 
 @Module({
+  imports: [NutritionModule],
   controllers: [ChatController],
   providers: [
     ChatService,
